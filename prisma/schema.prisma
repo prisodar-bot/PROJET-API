@@ -2,13 +2,78 @@ generator client {
   provider = "prisma-client"
   output   = "../src/generated/prisma"
 }
+
 datasource db {
   provider = "postgresql"
 }
+
 model Ticket {
   id          Int      @id @default(autoincrement())
   title       String
   description String
   status      String   @default("OPEN")
   createdAt   DateTime @default(now())
+
+  createdById Int?
+  createdBy   User? @relation(fields: [createdById], references: [id])
+}
+
+enum Role {
+  SUPER_ADMIN
+  ADMIN
+  AGENT
+  USER
+}
+
+model User {
+  id           Int           @id @default(autoincrement())
+  email        String        @unique
+  passwordHash String?
+  role         Role          @default(USER)
+  isActive     Boolean       @default(false)
+  invitedAt    DateTime      @default(now())
+  acceptedAt   DateTime?
+  createdAt    DateTime      @default(now())
+  tickets      Ticket[]
+  sessions     Session[]
+  actionTokens ActionToken[]
+}
+
+enum TokenPurpose {
+  INVITATION
+  PASSWORD_RESET
+}
+
+model Session {
+  id            String         @id @default(uuid())
+  userId        Int
+  user          User           @relation(fields: [userId], references: [id])
+  createdAt     DateTime       @default(now())
+  expiresAt     DateTime
+  revokedAt     DateTime?
+  refreshTokens RefreshToken[]
+
+  @@index([userId])
+}
+
+model RefreshToken {
+  id        Int       @id @default(autoincrement())
+  tokenHash String    @unique
+  sessionId String
+  session   Session   @relation(fields: [sessionId], references: [id])
+  usedAt    DateTime?
+
+  @@index([sessionId])
+}
+
+model ActionToken {
+  id        Int          @id @default(autoincrement())
+  tokenHash String       @unique
+  purpose   TokenPurpose
+  userId    Int
+  user      User         @relation(fields: [userId], references: [id])
+  expiresAt DateTime
+  usedAt    DateTime?
+
+  @@index([userId, purpose])
 }

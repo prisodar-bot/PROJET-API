@@ -1,118 +1,162 @@
-﻿# API de tickets de support informatique
+# API de support informatique
 
-API réalisée dans le cadre d'un projet scolaire pour gérer les problèmes informatiques des employés d'une entreprise.
+Projet pédagogique : gérer des tickets et les comptes des employés avec Node.js, Express, TypeScript, PostgreSQL et Prisma 7.10.1.
 
-## Fonctionnalités
+## Ce que fait l'API
 
-- Créer un ticket de support.
-- Afficher tous les tickets.
-- Rechercher un ticket par son numéro.
-- Modifier le statut d'un ticket.
+- Créer, lister et rechercher les tickets ; modifier leur statut.
+- Créer des comptes uniquement depuis un Super Admin, sans inscription publique.
+- Inviter un utilisateur et lui permettre de choisir son mot de passe.
+- Se connecter avec email et mot de passe.
+- Recevoir un JWT d'accès et un refresh token.
+- Renouveler les jetons, se déconnecter et révoquer les sessions.
+- Appliquer les permissions selon le rôle et le propriétaire du ticket.
+- Réinitialiser un mot de passe avec un lien temporaire à usage unique.
+- Désactiver et réactiver les comptes.
+- Envoyer les emails avec Resend ou les enregistrer localement pendant le développement.
 
-## Technologies
+## Démarrage sur ton ordinateur
 
-| Technologie | Rôle |
-| --- | --- |
-| Node.js | Exécuter le serveur |
-| Express | Recevoir les requêtes HTTP et envoyer les réponses |
-| TypeScript | Vérifier les types du code |
-| PostgreSQL | Conserver les tickets |
-| Prisma 7 | Accéder à la base et gérer les migrations |
+### Terminal 1 : le serveur
 
-## Installation
+Arrêter l'ancien serveur avec **Ctrl + C**, puis :
 
-Prérequis : Node.js compatible avec Prisma 7 (par exemple Node.js 22.12+ dans la branche 22, ou 24+), npm et un serveur PostgreSQL démarré. pgAdmin permet de gérer la base et Insomnia de tester les requêtes.
+```powershell
+npm run dev
+```
 
-Ouvrir un terminal dans le dossier du projet :
+Laisser ce terminal ouvert. Le serveur écoute sur **http://localhost:3000**.
+Cette commande surveille les fichiers et redémarre automatiquement après les modifications.
+Les anciens jetons d'accès ne correspondent plus au nouveau format : se reconnecter dans Insomnia.
+
+### Terminal 2 : les commandes de gestion
+
+Pour installer le projet sur un nouvel ordinateur :
+
+1. Installer Node.js compatible (par exemple la branche 22 à partir de 22.12, ou 24+), npm et PostgreSQL.
+2. Créer la base `support_tickets` dans PostgreSQL.
+3. Installer les dépendances :
 
 ```powershell
 npm install
 ```
 
-Créer une base appelée `support_tickets` dans PostgreSQL. Avec pgAdmin : clic droit sur **Databases → Create → Database**, saisir le nom et enregistrer.
-
-Créer un fichier `.env` à la racine du projet :
-
-```env
-DATABASE_URL="postgresql://postgres:TON_MOT_DE_PASSE@localhost:5432/support_tickets?schema=public"
-```
-
-Remplacer `TON_MOT_DE_PASSE` par le mot de passe PostgreSQL. Adapter l'utilisateur, l'adresse et le port si nécessaire. Encoder les caractères spéciaux du mot de passe pour une URL (par exemple `@` devient `%40`). Ne pas publier le fichier `.env`.
-
-Appliquer les migrations existantes et générer le client Prisma :
+4. Copier `.env.example` vers `.env` uniquement si ce dernier n'existe pas déjà.
+5. Renseigner `DATABASE_URL` avec les identifiants PostgreSQL.
+6. Générer une clé pour `JWT_ACCESS_SECRET` :
 
 ```powershell
-npx prisma migrate deploy --config prisma7.config.ts
-npx prisma generate --config prisma7.config.ts
+node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"
 ```
 
-La première commande crée la structure des tables à partir des migrations. La seconde génère le code utilisé pour communiquer avec la base dans `src/generated/prisma`.
+Copier la valeur dans `.env`. Ne pas partager la clé ni le fichier.
 
-Après une modification du modèle pendant le développement, créer une nouvelle migration avec un nom décrivant le changement :
+7. Appliquer les migrations puis générer le client :
 
 ```powershell
-npx prisma migrate dev --name nom_du_changement --config prisma7.config.ts
-npx prisma generate --config prisma7.config.ts
+npm run db:migrate
+npm run db:generate
 ```
 
-## Démarrer le serveur
+Les commandes utilisent explicitement `prisma7.config.ts`. Garder Prisma en version 7.
+
+Pour créer le tout premier Super Admin, renseigner temporairement `SUPER_ADMIN_EMAIL` et `SUPER_ADMIN_PASSWORD` (16 caractères minimum) dans `.env`, puis :
 
 ```powershell
-npx tsx src/server.ts
+npm run admin:create
 ```
 
-Le terminal affiche `Server is running on port 3000`. Le laisser ouvert pendant les tests.
+Supprimer ensuite la ligne du mot de passe de `.env`. Ne pas relancer ce script si le Super Admin existe déjà.
 
-Adresse : **http://localhost:3000**. La route `/` affiche `Hello, World!`.
+Sous PowerShell, remplacer `npm` par `npm.cmd` et `npx` par `npx.cmd` si l'exécution des scripts est bloquée.
 
-Pour arrêter le serveur : **Ctrl + C**. Après une modification du code, arrêter puis relancer le serveur pour charger les changements.
+## Permissions
 
-Sous PowerShell, si l'exécution des scripts est bloquée, utiliser `npm.cmd` et `npx.cmd` à la place de `npm` et `npx`.
+| Action | SUPER_ADMIN | ADMIN | AGENT | USER |
+| --- | --- | --- | --- | --- |
+| Créer un ticket | Oui | Oui | Oui | Oui |
+| Consulter les tickets | Tous | Tous | Tous | Les siens |
+| Modifier un statut | Oui | Oui | Oui | Non |
+| Voir la liste des utilisateurs | Oui | Oui | Non | Non |
+| Créer et inviter un utilisateur | Oui | Non | Non | Non |
+| Modifier un rôle | Oui | Non | Non | Non |
+| Désactiver / réactiver un compte | Oui | Non | Non | Non |
 
-## Structure du projet
+Le Super Admin ne peut pas changer son propre rôle ni son propre état.
+Un compte invité ne peut être activé qu'en acceptant une invitation.
+Les anciens tickets sans créateur sont visibles par l'équipe de support, mais pas par les Users.
+Les rôles et l'état du compte sont relus dans PostgreSQL à chaque requête protégée.
 
-```text
-prisma/
-  schema.prisma          Modèle des tickets
-  migrations/            Historique des changements de la base
-src/
-  generated/prisma/      Client généré automatiquement
-  prisma.ts              Connexion à PostgreSQL via Prisma
-  server.ts              Routes Express et validations
-prisma7.config.ts        Configuration des commandes Prisma
-tsconfig.json            Configuration TypeScript
-package.json             Dépendances du projet
-.env                     Adresse de connexion privée
+## Tests dans Insomnia
+
+Aucun terminal supplémentaire n'est nécessaire pour ces étapes. Garder le serveur dans le **terminal 1**.
+
+Pour POST et PATCH, choisir **Body → JSON**.
+Pour une route protégée, choisir **Auth → Bearer Token** et coller uniquement la valeur de `accessToken`.
+
+### 1. Connexion
+
+**POST** `http://localhost:3000/auth/login`
+
+```json
+{
+  "email": "admin@example.com",
+  "password": "TON_MOT_DE_PASSE"
+}
 ```
 
-## Modèle d'un ticket
+Réponse 200 avec `accessToken`, `refreshToken`, `tokenType: "Bearer"` et `expiresIn: 900`.
+Remplacer les valeurs d'exemple par celles du compte existant. Garder les jetons privés.
 
-| Champ | Type | Description |
+### 2. Créer un utilisateur et envoyer son invitation
+
+**POST** `http://localhost:3000/users` — jeton du Super Admin.
+
+```json
+{
+  "email": "employe@example.com",
+  "role": "USER"
+}
+```
+
+Réponse 201 : compte inactif créé et invitation préparée.
+Les rôles acceptés sont `SUPER_ADMIN`, `ADMIN`, `AGENT` et `USER`.
+
+En mode local, ouvrir le dernier fichier dans **.local-emails**, puis copier le lien contenu dans `text` dans un navigateur.
+Choisir et confirmer un mot de passe de 16 à 128 caractères. Le serveur doit rester lancé.
+Le lien expire après 24 heures et ne fonctionne qu'une fois.
+La page efface le jeton de la barre d'adresse après son chargement : ne pas actualiser avant d'avoir terminé.
+
+Pour renvoyer une invitation non acceptée :
+
+**POST** `http://localhost:3000/users/2/invitation` — Super Admin, remplacer 2 par le bon identifiant.
+Les précédents liens deviennent invalides.
+
+Sans navigateur, il est aussi possible d'utiliser :
+
+**POST** `http://localhost:3000/auth/accept-invitation`
+
+```json
+{
+  "token": "LA_VALEUR_APRES_token_DANS_LE_LIEN",
+  "password": "UN_NOUVEAU_MOT_DE_PASSE_LONG"
+}
+```
+
+Aucun JWT n'est nécessaire pour accepter l'invitation. Après acceptation, se connecter avec l'email et le mot de passe choisi.
+
+### 3. Tickets
+
+Toutes ces routes nécessitent un jeton d'accès.
+
+| Méthode | URL | Résultat |
 | --- | --- | --- |
-| id | Entier | Numéro unique attribué automatiquement |
-| title | Texte | Titre du problème |
-| description | Texte | Description du problème |
-| status | Texte | Statut initial : OPEN |
-| createdAt | Date et heure | Date de création automatique |
+| GET | /tickets | Liste selon les permissions |
+| GET | /tickets/1 | Un ticket accessible |
+| POST | /tickets | Création |
+| PATCH | /tickets/1/status | Modification par le support |
 
-Les statuts acceptés par la route de modification sont `OPEN` (ouvert), `IN_PROGRESS` (en cours), `RESOLVED` (résolu) et `CLOSED` (fermé).
-
-## Routes et tests dans Insomnia
-
-Le serveur doit rester lancé. Créer une requête HTTP, choisir la méthode, saisir l'URL et cliquer sur **Send**. Pour POST et PATCH, choisir un corps **JSON**, avec le type de contenu `application/json`.
-
-| Méthode | Route | Fonction | Succès |
-| --- | --- | --- | --- |
-| POST | /tickets | Créer un ticket | 201 |
-| GET | /tickets | Lister tous les tickets | 200 |
-| GET | /tickets/:id | Rechercher par numéro | 200 |
-| PATCH | /tickets/:id/status | Modifier le statut | 200 |
-
-### Créer un ticket
-
-**POST** `http://localhost:3000/tickets`
-
-Corps JSON :
+Corps de création :
 
 ```json
 {
@@ -121,37 +165,9 @@ Corps JSON :
 }
 ```
 
-Le titre et la description doivent être des textes non vides. Les espaces au début et à la fin sont supprimés. Le numéro, le statut initial et la date sont remplis automatiquement.
+Le créateur est automatiquement l'utilisateur connecté. Le titre est limité à 150 caractères et la description à 10 000.
 
-Exemple de réponse (le numéro et la date dépendent de la base) :
-
-```json
-{
-  "id": 1,
-  "title": "Probleme Wi-Fi",
-  "description": "Impossible de me connecter au reseau.",
-  "status": "OPEN",
-  "createdAt": "2026-10-29T12:51:55.806Z"
-}
-```
-
-### Afficher tous les tickets
-
-**GET** `http://localhost:3000/tickets`
-
-Aucun corps à envoyer. La réponse est un tableau de tickets, ou `[]` si la table est vide. Aucun ordre particulier n'est garanti.
-
-### Rechercher un ticket
-
-**GET** `http://localhost:3000/tickets/1`
-
-Remplacer `1` par un numéro existant. Aucun corps à envoyer. La réponse contient un seul ticket.
-
-### Modifier le statut
-
-**PATCH** `http://localhost:3000/tickets/1/status`
-
-Corps JSON :
+Corps de modification de statut :
 
 ```json
 {
@@ -159,33 +175,196 @@ Corps JSON :
 }
 ```
 
-La réponse contient le ticket avec son nouveau statut. Toute transition entre les quatre statuts est autorisée.
+Statuts : `OPEN`, `IN_PROGRESS`, `RESOLVED`, `CLOSED`.
+Un User demandant le ticket d'un autre reçoit 404. Il reçoit 403 s'il essaie de modifier un statut.
+Il n'existe pas de route PUT ou DELETE.
 
-La modification utilise **PATCH** : aucune route **PUT** ni **DELETE** n'est définie.
+### 4. Renouveler les jetons
 
-## Erreurs et vérifications manuelles
+**POST** `http://localhost:3000/auth/refresh`
 
-| Test | Résultat attendu |
+```json
+{
+  "refreshToken": "LE_DERNIER_REFRESH_TOKEN_RECU"
+}
+```
+
+Aucun Bearer nécessaire. La réponse contient un nouvel access token et un nouveau refresh token.
+Toujours remplacer les deux valeurs dans Insomnia.
+Un ancien refresh token n'est plus utilisable. Le réutiliser révoque toute la session, y compris le nouveau jeton : il faut alors se reconnecter.
+
+Le JWT dure 15 minutes. La session dure au maximum 7 jours à partir de la connexion ; le renouvellement ne prolonge pas ces 7 jours.
+
+### 5. Se déconnecter
+
+**POST** `http://localhost:3000/auth/logout`
+
+```json
+{
+  "refreshToken": "LE_REFRESH_TOKEN"
+}
+```
+
+Réponse 204 sans corps. Toute la session est révoquée : ses JWT et ses refresh tokens sont refusés.
+Les autres connexions de la même personne restent actives.
+
+### 6. Consulter son compte
+
+**GET** `http://localhost:3000/auth/me` — Bearer requis.
+
+Renvoie l'identifiant, l'email, le rôle et l'état actif, jamais le hash du mot de passe.
+
+### 7. Mot de passe oublié
+
+**POST** `http://localhost:3000/auth/forgot-password`
+
+```json
+{
+  "email": "employe@example.com"
+}
+```
+
+La réponse reste identique que le compte existe ou non.
+Ouvrir le lien dans l'email local ou reçu : choisir et confirmer un nouveau mot de passe.
+Le lien dure 30 minutes, n'est utilisable qu'une fois et n'active pas un compte désactivé.
+
+Équivalent API :
+
+**POST** `http://localhost:3000/auth/reset-password`
+
+```json
+{
+  "token": "LE_JETON_DU_LIEN",
+  "password": "UN_NOUVEAU_MOT_DE_PASSE_LONG"
+}
+```
+
+Le changement ferme toutes les sessions de cet utilisateur, invalide les autres liens en attente et nécessite une nouvelle connexion.
+Un email de confirmation est préparé.
+
+### 8. Gérer les utilisateurs
+
+**GET** `http://localhost:3000/users` — Super Admin ou Admin.
+
+**PATCH** `http://localhost:3000/users/2/active` — Super Admin :
+
+```json
+{
+  "isActive": false
+}
+```
+
+Utiliser `true` pour réactiver un compte ayant déjà accepté son invitation.
+La désactivation ferme toutes les sessions et invalide les liens en attente.
+La réactivation ne restaure pas les anciennes sessions ; il faut se reconnecter.
+
+**PATCH** `http://localhost:3000/users/2/role` — Super Admin :
+
+```json
+{
+  "role": "AGENT"
+}
+```
+
+Les permissions changent dès la requête suivante, sans attendre l'expiration du JWT.
+
+## Emails : local ou Resend
+
+Par défaut, `EMAIL_PROVIDER=local` : aucun email n'est envoyé sur Internet.
+Les messages sont écrits dans `.local-emails/`, dossier ignoré par Git contenant des liens privés.
+Ce mode ne fonctionne pas avec `NODE_ENV=production`.
+
+Pour envoyer de vrais emails, configurer dans `.env` :
+
+```env
+EMAIL_PROVIDER="resend"
+RESEND_API_KEY="TA_CLE_RESEND"
+EMAIL_FROM="Support <support@ton-domaine.fr>"
+APP_URL="http://localhost:3000"
+```
+
+Utiliser un expéditeur et des destinataires autorisés par le compte Resend.
+En production, utiliser une URL publique HTTPS pour `APP_URL`.
+Ne pas publier la clé. Redémarrer le serveur après une modification de `.env`.
+
+Si l'invitation échoue (502), le compte reste créé mais le lien est invalidé.
+Corriger la configuration puis utiliser POST /users/:id/invitation.
+L'envoi réel doit être testé avec ton compte Resend : les tests automatiques utilisent le mode local.
+
+Référence : [API d'envoi Resend](https://resend.com/docs/api-reference/emails/send-email).
+
+## Explications du code
+
+| Fichier | Rôle |
 | --- | --- |
-| POST avec titre ou description vide | 400 : données invalides |
-| GET /tickets/abc ou /tickets/0 | 400 : numéro invalide |
-| GET avec un numéro valide mais absent | 404 : Ticket introuvable. |
-| PATCH avec un statut non autorisé | 400 : statut refusé |
-| PATCH avec un numéro valide mais absent et un statut autorisé | 404 : Ticket introuvable. |
-| Échec d'une opération sur la base | 500 : message d'erreur de l'opération |
+| src/server.ts | Démarrer et arrêter le serveur |
+| src/app.ts | Assembler les routes et renvoyer les erreurs JSON |
+| src/prisma.ts | Créer la connexion Prisma/PostgreSQL |
+| src/auth-routes.ts | Connexion, renouvellement, déconnexion, invitation et mot de passe oublié |
+| src/user-routes.ts | Administration des comptes et invitations |
+| src/ticket-routes.ts | Routes de tickets et filtre par propriétaire |
+| src/tokens.ts | Créer les JWT, générer les jetons aléatoires et calculer leurs empreintes |
+| src/middlewares/auth.ts | Vérifier la session, le compte et les rôles |
+| src/middlewares/rate-limit.ts | Limiter les tentatives par IP et par route |
+| src/email.ts | Préparer les liens et envoyer ou enregistrer les emails |
+| src/action-pages.ts | Petits formulaires d'invitation et de réinitialisation |
+| src/validation.ts | Vérifier les entrées et définir les erreurs |
+| prisma/schema.prisma | Décrire les tables et relations |
+| tests/auth.test.ts | Vérifier les parcours avec PostgreSQL |
 
-Les numéros acceptés sont des entiers compris entre 1 et 2 147 483 647.
+### Les mots de passe
 
-Les quatre fonctionnalités et la recherche d'un ticket absent ont été vérifiées manuellement pendant le développement. Il n'y a pas de tests automatisés : `npm test` contient encore la commande par défaut de npm.
+Argon2 conserve une empreinte du mot de passe, jamais sa valeur en clair.
+À la connexion, on compare le mot de passe saisi à cette empreinte.
 
-## Dépannage
+### Les jetons
 
-- **Cannot POST /tickets** : vérifier la présence de la route POST, enregistrer le fichier et redémarrer le serveur.
-- **Connexion HTTP refusée** : vérifier que le serveur Node.js fonctionne et que l'adresse utilise le port 3000.
-- **Erreur de connexion PostgreSQL** : vérifier le démarrage de PostgreSQL, les identifiants et le nom de base dans `DATABASE_URL`.
-- **DATABASE_URL absente** : vérifier le fichier `.env` à la racine et démarrer le serveur depuis le dossier du projet.
-- **Client Prisma manquant** : lancer `npx prisma generate --config prisma7.config.ts`.
+- Le JWT signé contient le numéro d'utilisateur et le numéro de session.
+- Le refresh token est une valeur aléatoire qui permet de renouveler l'accès.
+- Les liens d'invitation et de reset utilisent eux aussi des valeurs aléatoires.
+- PostgreSQL conserve uniquement les empreintes SHA-256 de ces valeurs aléatoires.
+- Une session est une connexion d'un utilisateur. La révoquer coupe l'accès, même si un JWT n'est pas encore expiré.
 
-## Limites actuelles
+### Pourquoi des transactions ?
 
-Ce projet pédagogique ne comporte pas d'authentification : toute personne pouvant joindre l'API peut consulter et modifier les tickets. La liste n'est pas paginée. Le statut est stocké comme texte dans PostgreSQL ; les valeurs autorisées sont vérifiées dans la route PATCH.
+Une transaction regroupe plusieurs modifications : elles réussissent ensemble ou sont annulées ensemble.
+Un verrou court sur le compte empêche deux requêtes de consommer simultanément le même jeton ou de créer une session pendant une désactivation.
+Les anciens refresh tokens restent enregistrés pour détecter leur réutilisation.
+
+Les règles des liens temporaires suivent les principes de la [fiche OWASP sur le mot de passe oublié](https://cheatsheetseries.owasp.org/cheatsheets/Forgot_Password_Cheat_Sheet.html).
+
+## Vérifications
+
+Dans le **terminal 2**, pendant que PostgreSQL fonctionne :
+
+```powershell
+npm run check
+npm test
+```
+
+Les tests démarrent un serveur sur un port temporaire. Ils créent des comptes et tickets de test, puis les suppriment sans toucher aux comptes existants.
+Les emails de test restent dans un dossier temporaire supprimé à la fin.
+
+Parcours vérifiés : rôles, propriété des tickets, invitations à usage unique et expirées, renvoi d'invitation, rotation des refresh tokens et rejeu simultané, déconnexion, reset à usage unique, désactivation/réactivation, changement de rôle, session expirée et JSON malformé.
+
+## Codes de réponse
+
+- 200 : opération réussie.
+- 201 : ressource créée.
+- 204 : déconnexion réussie sans corps de réponse.
+- 400 : données ou lien invalides.
+- 401 : connexion requise ou session invalide.
+- 403 : permissions insuffisantes.
+- 404 : ressource absente ou ticket inaccessible.
+- 409 : email déjà utilisé ou opération incompatible avec l'état du compte.
+- 413 : corps JSON trop volumineux.
+- 429 : trop de tentatives ; attendre le délai Retry-After.
+- 500 : erreur interne.
+- 502 : échec de l'envoi de l'invitation.
+
+## Limites du projet pédagogique
+
+La limitation des tentatives est en mémoire pour un seul serveur ; un déploiement avec plusieurs instances nécessite un stockage partagé. Les listes ne sont pas paginées.
+Les jetons sont renvoyés en JSON pour les tests Insomnia : une future application web devra définir une stratégie de stockage adaptée.
+Le statut de ticket reste un texte contrôlé par l'API.
+Aucun utilisateur n'est autorisé à changer son email ; aucune inscription publique n'existe.
